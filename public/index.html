@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Browse ppv.st events and resolve HLS streams. Play in-browser or copy links for VLC and MPV.">
+  <title>PPV Stream Browser</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="top__brand">
+        <h1 class="top__title">PPV Stream Browser</h1>
+        <p class="top__desc">Browse live events from <a href="https://ppv.st" target="_blank" rel="noopener">ppv.st</a>, select a stream, and play it here or copy links for VLC/MPV.</p>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="browser" id="events-container">
+        <div class="browser__filters">
+          <input id="filter" type="text" placeholder="Filter events…">
+          <select id="category">
+            <option value="">All Categories</option>
+          </select>
+        </div>
+        <div id="events" class="browser__list"></div>
+      </div>
+
+      <div id="source-section" class="source-section" hidden>
+        <button id="back-btn" class="back-btn" type="button">← Back to events</button>
+        <div id="source-list" class="source-list"></div>
+      </div>
+    </section>
+
+    <section id="out" class="stack" hidden>
+      <div class="card">
+        <h2 id="title" class="stream-title">Stream</h2>
+        <div class="player">
+          <video id="vid" controls playsinline></video>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="section-title">Export</h3>
+        <ul class="exports">
+          <li class="export">
+            <div class="export__meta">
+              <span class="export__name">Direct URL</span>
+              <span class="export__hint">Upstream M3U8 playlist</span>
+            </div>
+            <div class="export__row">
+              <input id="direct" readonly>
+              <button type="button" data-copy="direct">Copy</button>
+            </div>
+          </li>
+          <li class="export">
+            <div class="export__meta">
+              <span class="export__name">Proxied URL</span>
+              <span class="export__hint">Stream through this server</span>
+            </div>
+            <div class="export__row">
+              <input id="proxy" readonly>
+              <button type="button" data-copy="proxy">Copy</button>
+            </div>
+          </li>
+          <li class="export">
+            <div class="export__meta">
+              <span class="export__name">VLC</span>
+              <span class="export__hint">Open Network Stream command</span>
+            </div>
+            <div class="export__row">
+              <input id="vlc" readonly>
+              <button type="button" data-copy="vlc">Copy</button>
+            </div>
+          </li>
+          <li class="export">
+            <div class="export__meta">
+              <span class="export__name">MPV</span>
+              <span class="export__hint">Terminal playback command</span>
+            </div>
+            <div class="export__row">
+              <input id="mpv" readonly>
+              <button type="button" data-copy="mpv">Copy</button>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <p id="err" class="msg msg--err" hidden></p>
+  </div>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
