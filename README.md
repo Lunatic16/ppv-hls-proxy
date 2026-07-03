@@ -7,7 +7,7 @@ Node.js resolver for ppv.st live streams with a browser-based event browser UI. 
 **This fork adds:**
 - Event browser UI with category/text filtering
 - Substream selection (multiple sources per event)
-- API domain failover chain (ppv.st → ppv.cx → ppv.to → ppv.is → ppv.lc)
+- API domain failover chain (ppv.s.. → ppv.c.. → ppv.t.. → ppv.i.. → ppv.l..)
 - Two-column responsive layout (events left, player right on wide screens)
 - Mobile clipboard fallback for iOS/Android
 - 24/7 events sorted to bottom of list
@@ -67,7 +67,7 @@ Node.js resolver for ppv.st live streams with a browser-based event browser UI. 
 
 ### Request Flow
 
-1. **User opens browser** → Frontend fetches `https://api.ppv.st/api/streams`
+1. **User opens browser** → Frontend fetches `https://api.ppv.s../api/streams`
 2. **User clicks event** → Shows substream picker (default + all substreams)
 3. **User selects source** → Calls `POST /api/embed` with iframe URL
 4. **Backend decrypts** → `/fetch` handshake → WASM → HLS URL
@@ -114,7 +114,7 @@ Resolve a ppv.st live URL (uses default embed source from API metadata).
 **Request:**
 ```json
 {
-  "url": "https://ppv.st/live/wc/2026-07-02/por-cro"
+  "url": "https://ppv.s../l../wc/2026-07-02/p..."
 }
 ```
 
@@ -122,8 +122,8 @@ Resolve a ppv.st live URL (uses default embed source from API metadata).
 ```json
 {
   "ok": true,
-  "uri": "wc/2026-07-02/por-cro",
-  "contentPath": "/live/wc/2026-07-02/por-cro",
+  "uri": "wc/2026-07-02/...o",
+  "contentPath": "/live/wc/2026-07-02/...",
   "streamUrl": "https://cdn.example/secure/.../index.m3u8",
   "proxiedUrl": "http://localhost:3000/api/hls?url=...&embed=...&embedOrigin=..."
 }
@@ -151,7 +151,7 @@ Resolve an embed URL directly (used for substreams).
 **Request:**
 ```json
 {
-  "iframe": "https://embedindia.st/embed/wc/2026-07-02/por-cro/fox"
+  "iframe": "https://embedindia.s../embed/wc/2026-07-02/por-cro/fox"
 }
 ```
 
@@ -162,7 +162,7 @@ Resolve an embed URL directly (used for substreams).
   "streamUrl": "https://cdn.example/secure/.../FOX/index.m3u8",
   "proxiedUrl": "http://localhost:3000/api/hls?url=...&embed=...&embedOrigin=...",
   "embed": "wc/2026-07-02/por-cro/fox",
-  "embedOrigin": "https://embedindia.st"
+  "embedOrigin": "https://embedindia.s.."
 }
 ```
 
@@ -237,8 +237,8 @@ All with **Copy** buttons (mobile-aware).
 
 From API metadata:
 ```
-https://embedindia.st/embed/wc/2026-07-02/por-cro
-→ { origin: "https://embedindia.st", path: "wc/2026-07-02/por-cro" }
+https://embedindia.s../embed/wc/2026-07-02/por-cro
+→ { origin: "https://embedindia.s..", path: "wc/2026-07-02/por-cro" }
 ```
 
 ### 2. `/fetch` Handshake
@@ -318,11 +318,11 @@ public/
 The backend automatically tries alternative API domains if the primary fails:
 
 **Failover order:**
-1. `api.ppv.st` (primary)
-2. `api.ppv.cx`
-3. `api.ppv.to`
-4. `api.ppv.is`
-5. `api.ppv.lc`
+1. `api.ppv.s..` (primary)
+2. `api.ppv.c..`
+3. `api.ppv.t..`
+4. `api.ppv.i..`
+5. `api.ppv.l..`
 
 Each API request independently walks the failover chain. The response includes `resolvedFrom` to show which domain succeeded.
 
