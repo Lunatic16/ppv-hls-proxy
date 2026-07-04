@@ -315,12 +315,12 @@ async function resolveAndPlay(iframeUrl) {
     if (!data.ok) throw new Error(`${data.stage || 'error'}: ${data.error || 'resolve failed'}`)
     if (!data.streamUrl || !data.proxiedUrl) throw new Error('missing stream URLs in response')
     
-    await play(data.proxiedUrl)
-    
     fields.direct.value = data.streamUrl
     fields.proxy.value = data.proxiedUrl
     fields.vlc.value = vlc(data.streamUrl)
     fields.mpv.value = mpv(data.streamUrl, data.embed)
+    
+    await play(data.proxiedUrl)
   } catch (error) {
     err.textContent = error.message
     err.hidden = false
