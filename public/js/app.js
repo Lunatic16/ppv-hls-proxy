@@ -315,11 +315,17 @@ async function resolveAndPlay(iframeUrl) {
     if (!data.ok) throw new Error(`${data.stage || 'error'}: ${data.error || 'resolve failed'}`)
     if (!data.streamUrl || !data.proxiedUrl) throw new Error('missing stream URLs in response')
     
-    await play(data.proxiedUrl)
+    try {
+      await stop() // Stop any existing playback before starting new one
+    } catch (e) {
+      console.warn('Error stopping previous playback:', e)
+    }
+
     fields.direct.value = data.streamUrl
     fields.proxy.value = data.proxiedUrl
     fields.vlc.value = vlc(data.proxiedUrl)
     fields.mpv.value = mpv(data.proxiedUrl, data.embed)
+    await play(data.proxiedUrl)
 
   } catch (error) {
     err.textContent = error.message
@@ -407,7 +413,7 @@ backBtn.addEventListener('click', () => {
   sourceSection.hidden = true
   eventsContainer.classList.remove('browser--sources')
   out.hidden = true
-  stop()
+  //stop()
 })
 
 filter.addEventListener('input', renderEvents)

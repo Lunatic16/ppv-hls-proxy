@@ -3,6 +3,8 @@ services:
     build:
       context: .
     container_name: ppv-hls-proxy
+    cap_add:
+      - NET_ADMIN
     ports:
       - "${PORT:-3000}:3000"
     restart: always
