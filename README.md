@@ -95,7 +95,7 @@ Server starts on `http://localhost:3000/` (or port from `PORT` env var).
 1. **Clone the repository**
 
     ```bash
-    git clone lunatic16/ppv-hls-proxy
+    git clone https://github.com/Lunatic16/ppv-hls-proxy.git
     cd ppv-hls-proxy
     ```
 
