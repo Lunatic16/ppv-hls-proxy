@@ -83,7 +83,7 @@ Node.js resolver for ppv.s.. live streams with a browser-based event browser UI.
 ### Installation
 
 ```bash
-cd ppv-hls-stream-resolver
+cd ppv-hls-proxy
 npm install
 npm start
 ```
