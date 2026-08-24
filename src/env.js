@@ -4,9 +4,9 @@ export const port = Number(process.env.PORT) || 3000
 export const API_DOMAINS = [
   'ppv.st',   // primary
   'ppv.cx',   // failover 1
-  'ppv.to',   // failover 2
+  'ppv.lc',   // failover 2
   'ppv.is',   // failover 3
-  'ppv.lc',   // failover 4
+  'ppv.to',   // failover 4
 ]
 
 export const API_BASE = `https://api.${API_DOMAINS[0]}/api`
