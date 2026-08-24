@@ -5,8 +5,6 @@ export const API_DOMAINS = [
   'ppv.st',   // primary
   'ppv.cx',   // failover 1
   'ppv.lc',   // failover 2
-  'ppv.is',   // failover 3
-  'ppv.to',   // failover 4
 ]
 
 export const API_BASE = `https://api.${API_DOMAINS[0]}/api`
