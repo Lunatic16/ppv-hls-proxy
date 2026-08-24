@@ -7,7 +7,7 @@ Node.js resolver for ppv.s.. live streams with a browser-based event browser UI.
 **This fork adds:**
 - Event browser UI with category/text filtering
 - Substream selection (multiple sources per event)
-- API domain failover chain (ppv.s.. → ppv.c.. → ppv.t.. → ppv.i.. → ppv.l..)
+- API domain failover chain (ppv.s.. → ppv.c.. → ppv.l..)
 - Two-column responsive layout (events left, player right on wide screens)
 - Mobile clipboard fallback for iOS/Android
 - 24/7 events sorted to bottom of list
