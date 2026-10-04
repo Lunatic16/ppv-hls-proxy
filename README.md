@@ -1,157 +1,139 @@
 # PPV HLS Stream Resolver
 
+> 🎬 Node.js resolver for **ppv.s\*\*** live streams with a browser-based event explorer and HLS proxy.
+
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](#disclaimer)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](#-docker)
+
+Fetches stream metadata from the public API, replays the `pooembed /fetch` protobuf handshake, runs the embed WASM decryptor, and proxies HLS playback — all behind a clean, responsive browser UI.
+
 **Based on:** [sharoon7171/ppv-hls-stream-resolver](https://github.com/sharoon7171/ppv-hls-stream-resolver)
 
-Node.js resolver for ppv.s.. live streams with a browser-based event browser UI. Fetches stream metadata from the public API, replays the pooembed `/fetch` protobuf handshake, runs the embed WASM decryptor, and proxies HLS playback.
+---
 
-**This fork adds:**
-- Event browser UI with category/text filtering
-- Substream selection (multiple sources per event)
-- API domain failover chain (ppv.s.. → ppv.c.. → ppv.l..)
-- Two-column responsive layout (events left, player right on wide screens)
-- Mobile clipboard fallback for iOS/Android
-- 24/7 events sorted to bottom of list
+## ✨ Features
 
-**Live demo**: Browse events at `http://localhost:3000/` after starting the server.
+| | |
+|---|---|
+| 📺 **Event Browser UI** | Browse all live events with category filters and full-text search |
+| 🎛️ **Substream Selection** | Pick from multiple broadcast sources per event (FOX, BBC, DAZN, …) |
+| 🟢 **Real-Time Status** | `LIVE` / `SOON` / `DONE` / `24/7` badges driven by event timestamps |
+| ▶️ **In-Browser Playback** | HLS.js integration for Chrome, Firefox, and Edge |
+| 📋 **Export Commands** | One-click copy for direct URLs, VLC, and MPV |
+| 📱 **Responsive Design** | Two-column desktop layout, single-column mobile |
+| 🔁 **API Failover** | Automatic domain failover chain across 5 mirrors |
+|📻 **Dynamic IPTV M3U8 Playlist** | Serves standard IPTV playlists (GET /playlist.m3u8) compatible with VLC, TiviMate, Kodi, IPTV Smarters, Dispatcharr, and Jellyfin. |
 
-## Table of Contents
+**Live demo:** browse at `http://localhost:3000/` after starting the server.
 
-- [Features](#features)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [API Reference](#api-reference)
-- [Frontend UI](#frontend-ui)
-- [How Decryption Works](#how-decryption-works)
-- [Code Map](#code-map)
-- [Configuration](#configuration)
-- [Mobile Support](#mobile-support)
-- [Disclaimer](#disclaimer)
+---
 
-## Features
-
-- **Event Browser UI** — Browse all ppv.st live events with filtering by category and text search
-- **Substream Selection** — Pick from multiple broadcast sources (FOX, BBC, DAZN, etc.) for each event
-- **Real-time Status** — LIVE, SOON, and DONE badges based on event timestamps
-- **In-Browser Playback** — HLS.js integration for Chrome/Firefox/Edge playback
-- **Export Commands** — Copy direct URLs or VLC/MPV commands for external players
-- **Responsive Design** — Two-column layout on wide screens, mobile-optimized on tablets/phones
-- **Mobile Clipboard** — Fallback copy mechanism for iOS Safari and Android Chrome
-
-## Architecture
+## 🏗️ Architecture
 
 ### Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Browser UI (port 3000)                       │
-│  ┌──────────────┐  ┌─────────────┐  ┌────────────────────────┐  │
-│  │ Event List   │→ │ Source Pick │→ │ Video Player + Export  │  │
-│  │ + Filters    │  │ (substreams)│  │ (VLC/MPV commands)     │  │
-│  └──────────────┘  └─────────────┘  └────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                    Backend API (Node.js)                        │
-│  POST /api/stream  — resolve ppv.s.. URL → embed → HLS           │
-│  POST /api/embed   — resolve embed URL directly (substreams)    │
-│  GET  /api/hls     — proxy HLS playlist + segments              │
-└─────────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                    External Services                            │
-│  api.ppv.s..       — event index + substreams metadata          │
-│  embedindia.s..    — /fetch handshake + WASM decrypt            │
-│  CDN (indianservers.s.., etc.) — actual .m3u8 + .ts segments    │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                     Browser UI  (port 3000)                      │
+│  ┌────────────┐   ┌─────────────┐   ┌────────────────────────┐   │
+│  │ Event List │ → │ Source Pick │ → │ Player + Export        │   │
+│  │ + Filters  │   │ (substreams)│   │ (VLC / MPV commands)   │   │
+│  └────────────┘   └─────────────┘   └────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     Backend API  (Node.js)                       │
+│   POST /api/stream  →  ppv.s.. URL → embed → HLS                 │
+│   POST /api/embed   →  embed URL directly (substreams)           │
+│   GET  /api/hls     →  proxy HLS playlist + segments             │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                      External Services                           │
+│   api.ppv.s..     →  event index + substream metadata            │
+│   embedindia.s..  →  /fetch handshake + WASM decrypt             │
+│   CDN             →  actual .m3u8 + .ts segments                 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Request Flow
 
-1. **User opens browser** → Frontend fetches `https://api.ppv.s../api/streams`
-2. **User clicks event** → Shows substream picker (default + all substreams)
-3. **User selects source** → Calls `POST /api/embed` with iframe URL
-4. **Backend decrypts** → `/fetch` handshake → WASM → HLS URL
-5. **Frontend plays** → HLS.js loads proxied URL or user copies to VLC/MPV
+1. **User opens browser** → frontend fetches the event index.
+2. **User clicks event** → substream picker shown (default + extras).
+3. **User selects source** → `POST /api/embed` with iframe URL.
+4. **Backend decrypts** → `/fetch` handshake → WASM → HLS URL.
+5. **Frontend plays** → HLS.js loads proxied URL, or user copies to VLC/MPV.
 
-## Quick Start
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ (native `fetch` required)
+- **Node.js 18+** (requires native `fetch`)
 - npm or pnpm
 
-### Installation
+### Local Install
 
 ```bash
+git clone https://github.com/Lunatic16/ppv-hls-proxy.git
 cd ppv-hls-proxy
 npm install
 npm start
 ```
 
-Server starts on `http://localhost:3000/` (or port from `PORT` env var).
+Server starts at `http://localhost:3000/` (or `$PORT`).
 
-### Docker
+### 🐳 Docker
 
-1. **Clone the repository**
+**Docker Run**
 
-    ```bash
-    git clone https://github.com/Lunatic16/ppv-hls-proxy.git
-    cd ppv-hls-proxy
-    ```
+```bash
+docker build -t ppv-hls-proxy .
+docker run -d --name ppv-hls-proxy -p 3000:3000 ppv-hls-proxy
+```
 
-2. **Docker**
+**Docker Compose**
 
-    - Docker Run
-
-    ```bash
-    docker build -t ppv-hls-proxy .
-    docker run -d --name ppv-hls-proxy -p 3000:3000 hls-proxy
-    ```
-
-    - Docker Compose
-
-        1. Copy the .env.example file to .env
-
-            ```bash
-            cp .env.example .env
-            ```
-
-        2. Edit the .env file appropriately
-        3. Run Docker Compose
-
-            ```bash
-            docker compose up -d
-            ```
+```bash
+cp .env.example .env
+# edit .env as needed
+docker compose up -d
+```
 
 ### Usage
 
-1. Open `http://localhost:3000/` in your browser
-2. Filter events by category or search text
-3. Click an event to see available sources (broadcasters)
-4. Select a source to play in-browser
-5. Use **Copy** buttons for VLC/MPV or share URLs
+1. Open `http://localhost:3000/`
+2. Filter by category or search text
+3. Click an event → choose a broadcaster
+4. Play in-browser or copy the VLC/MPV command
 
-### Mobile Usage
+**Mobile:** the UI collapses to a single column, copy buttons use a `document.execCommand('copy')` fallback, and Safari uses native HLS while Android Chrome falls back to HLS.js.
 
-On mobile devices:
-- The UI adapts to a single-column layout
-- Copy buttons use `document.execCommand('copy')` fallback (selects text for manual copy)
-- Video player uses native HLS on Safari, HLS.js on Android Chrome
+---
 
-## API Reference
+## 📡 API Reference
 
 ### `POST /api/stream`
 
-Resolve a ppv.st live URL (uses default embed source from API metadata).
+Resolve a `ppv.st` live URL using the default embed source.
 
-**Request:**
+<details>
+<summary><b>Request</b></summary>
+
 ```json
 {
   "url": "https://ppv.s../l../wc/2026-07-02/p..."
 }
 ```
+</details>
 
-**Response (200 OK):**
+<details>
+<summary><b>Response (200 OK)</b></summary>
+
 ```json
 {
   "ok": true,
@@ -161,8 +143,11 @@ Resolve a ppv.st live URL (uses default embed source from API metadata).
   "proxiedUrl": "http://localhost:3000/api/hls?url=...&embed=...&embedOrigin=..."
 }
 ```
+</details>
 
-**Response (error):**
+<details>
+<summary><b>Error response</b></summary>
+
 ```json
 {
   "ok": false,
@@ -173,22 +158,28 @@ Resolve a ppv.st live URL (uses default embed source from API metadata).
 }
 ```
 
-**Stages:** `input`, `meta`, `source`, `decrypt`
+**Stages:** `input` · `meta` · `source` · `decrypt`
+</details>
 
 ---
 
-### `POST /api/embed` (NEW)
+### `POST /api/embed` <sub>`NEW`</sub>
 
-Resolve an embed URL directly (used for substreams).
+Resolve an **embed URL directly** — used for substreams that have their own embed URLs in the index API.
 
-**Request:**
+<details>
+<summary><b>Request</b></summary>
+
 ```json
 {
   "iframe": "https://embedindia.s../embed/wc/2026-07-02/por-cro/fox"
 }
 ```
+</details>
 
-**Response:**
+<details>
+<summary><b>Response</b></summary>
+
 ```json
 {
   "ok": true,
@@ -198,8 +189,9 @@ Resolve an embed URL directly (used for substreams).
   "embedOrigin": "https://embedindia.s.."
 }
 ```
+</details>
 
-**Use case:** Substreams have their own embed URLs in the index API — use this endpoint instead of `/api/stream` which only handles default sources.
+> ℹ️ Use this endpoint for **substreams** — `/api/stream` only handles the default source.
 
 ---
 
@@ -207,106 +199,122 @@ Resolve an embed URL directly (used for substreams).
 
 Proxy HLS playlists and segments through your server.
 
-**Query parameters:**
+| Parameter     | Required | Description                         |
+|---------------|:--------:|-------------------------------------|
+| `url`         |    ✅    | Absolute upstream URL (`.m3u8`/`.ts`) |
+| `embed`       |    ✅    | Embed path from resolve response    |
+| `embedOrigin` |    ✅    | Embed origin from resolve response  |
 
-| Parameter     | Required | Description                              |
-|---------------|----------|------------------------------------------|
-| `url`         | yes      | Absolute upstream URL (M3U8 or .ts)      |
-| `embed`       | yes      | Embed path from resolve response         |
-| `embedOrigin` | yes      | Embed origin from resolve response       |
+**Response content types**
 
-**Response:**
-- `application/vnd.apple.mpegurl` for M3U8 playlists (rewritten)
-- `video/mp2t` for TS segments
-- `502` plain text on upstream failure
+- `application/vnd.apple.mpegurl` — rewritten M3U8 playlists
+- `video/mp2t` — TS segments
+- `502 text/plain` — upstream failure
 
-**CORS:** All endpoints return `Access-Control-Allow-Origin: *`
+**CORS:** all endpoints return `Access-Control-Allow-Origin: *`.
 
-## Frontend UI
+---
+
+## 🎨 Frontend UI
 
 ### Layout
 
-**Wide screens (≥1200px):**
-- **Left column:** Event browser (sticky, scrollable)
-- **Right column:** Video player + export section (sticky)
-
-**Mobile/tablet (<1200px):**
-- Single-column stacked layout
-- Events → Source picker → Player (full width)
+- **Wide screens (≥1200px)** — left column: event browser (sticky); right column: player + exports (sticky).
+- **Mobile / tablet (<1200px)** — single-column stack: events → source picker → player.
 
 ### Event Browser
 
-Displays events with:
-- **Status badges:** ●LIVE (orange), SOON (amber), DONE (grey), 24/7 (green)
-- **Event name, source, start time, category**
-- **Substream count:** Shows "+N more" for events with additional sources
-- **Filter by category** dropdown
-- **Text search** (filters in real-time)
+Displays events with status badges, name, source, start time, category, and a `+N more` indicator for extra substreams. Includes a category dropdown and live text search.
 
 ### Source Picker
 
-When you click an event:
-- Events list collapses
-- Shows all available sources (default + substreams)
-- Each source displays:
-  - Broadcaster name (FOX, BBC One, DAZN Spain, etc.)
-  - Locale (en, en-GB, es, etc.)
-  - "default" badge for primary source
-- Click a source to play
+Clicking an event collapses the list and shows all available sources:
+
+- Broadcaster name (FOX, BBC One, DAZN Spain, …)
+- Locale (`en`, `en-GB`, `es`, …)
+- `default` badge for the primary source
 
 ### Export Section
 
-After selecting a source, shows:
-- **Direct URL:** Upstream M3U8 (for VLC/MPV)
-- **Proxied URL:** Stream through this server (for browser)
-- **VLC:** `vlc <url>` command
-- **MPV:** `mpv <url>` command
+After selecting a source, you get:
 
-All with **Copy** buttons (mobile-aware).
+- **Direct URL** — upstream M3U8 (VLC/MPV)
+- **Proxied URL** — routed through this server (browser)
+- **VLC** / **MPV** commands
 
-## How Decryption Works
+…each with a mobile-aware **Copy** button.
 
-### 1. Embed Source Extraction
+---
 
-From API metadata:
+## 📺New IPTV Playlist Feature
+
+Two new endpoints for use with VLC, TiviMate, Kodi, IPTV Smarters, Dispatcharr, and Jellyfin, or any M3U-compatible player:
+
+### GET `/playlist.m3u8`
+
+Dynamically generates a full M3U playlist with all available channels. Each entry includes:
+
+* `tvg-id` — unique channel identifier
+* `tvg-name` — channel display name
+* `tvg-logo` — channel poster/thumbnail
+* `group-title` — sport category for channel grouping
+
+> **Optional filter:** `?category=Ice+Hockey` to get only a specific category.
+
+### GET `/live/<uri>.m3u8`
+
+Per-channel endpoint that resolves the embed + WASM decrypt on-the-fly and relays the HLS stream. This is what the IPTV player hits when you tune to a channel — no pre-resolution needed, URLs are resolved fresh each time.
+
+### How to use in TiviMate
+
+1. Add a new playlist → **M3U Playlist**
+2. Enter URL: `http://<your-server-ip>:3000/playlist.m3u8`
+3. All 77 channels appear grouped by sport, with logos and substreams as separate entries
+
+---
+
+## 🔐 How Decryption Works
+
+### 1. Embed source extraction
+
 ```
 https://embedindia.s../embed/wc/2026-07-02/por-cro
-→ { origin: "https://embedindia.s..", path: "wc/2026-07-02/por-cro" }
+  → { origin: "https://embedindia.s..", path: "wc/2026-07-02/por-cro" }
 ```
 
-### 2. `/fetch` Handshake
+### 2. `/fetch` handshake
 
 ```
 POST {origin}/fetch
 Content-Type: application/octet-stream
-Origin: {origin}
-Referer: {origin}/embed/{path}
-Body: length-prefixed protobuf encoding of {path}
+Origin:       {origin}
+Referer:      {origin}/embed/{path}
+Body:         length-prefixed protobuf encoding of {path}
 ```
 
-Response includes:
-- `island` header (session key)
-- Binary protobuf body
+Response carries an `island` header (session key) and a protobuf body.
 
-### 3. WASM Decryption (`gasm.wasm`)
+### 3. WASM decryption (`gasm.wasm`)
 
-- Runs in `happy-dom` sandbox with stubbed `jwplayer`, `fetch`
-- `set_stream_jw(island, body)` modifies WASM memory
-- Playlist URL extracted by scanning memory for:
-  ```
-  https://{host}/secure/{...}index.m3u8
-  ```
-- Slug from protobuf used to select correct URL when multiple exist
+Runs in a `happy-dom` sandbox with stubbed `jwplayer` / `fetch`. `set_stream_jw(island, body)` mutates WASM memory, and the playlist URL is recovered by scanning for:
 
-### 4. Relay/Proxy
+```
+https://{host}/secure/{...}index.m3u8
+```
 
-The resolved M3U8 works in VLC/MPV directly. Browser playback requires proxying:
+A protobuf slug selects the correct URL when multiple matches exist.
 
-- **M3U8 rewrite:** All media URIs mapped back to `/api/hls?...`
-- **Segment proxy:** Strips non-TS wrapper bytes, returns `video/mp2t`
-- **CORS:** Adds headers for browser access
+### 4. Relay / Proxy
 
-## Code Map
+The resolved M3U8 plays directly in VLC/MPV. Browser playback requires proxying:
+
+- **M3U8 rewrite** — media URIs remapped to `/api/hls?...`
+- **Segment proxy** — strips non-TS wrapper bytes, returns `video/mp2t`
+- **CORS** — headers added for browser access
+
+---
+
+## 🗺️ Code Map
 
 ```
 src/
@@ -337,71 +345,77 @@ public/
   js/app.js              # Event browser, source picker, HLS.js
 ```
 
-## Configuration
+---
+
+## ⚙️ Configuration
 
 ### Environment Variables
 
 | Variable | Default | Description                      |
 |----------|---------|----------------------------------|
 | `PORT`   | `3000`  | HTTP listen port                 |
-| `HOST`   | all     | Bind address (e.g., `127.0.0.1`) |
+| `HOST`   | all     | Bind address (e.g. `127.0.0.1`)  |
 
 ### API Domain Failover
 
-The backend automatically tries alternative API domains if the primary fails:
+The backend walks a mirror chain when the primary API fails:
 
-**Failover order:**
-1. `api.ppv.s..` (primary)
+1. `api.ppv.s..` *(primary)*
 2. `api.ppv.c..`
 3. `api.ppv.t..`
 4. `api.ppv.i..`
 5. `api.ppv.l..`
 
-Each API request independently walks the failover chain. The response includes `resolvedFrom` to show which domain succeeded.
+Each request independently walks the chain and reports `resolvedFrom` in the response. The frontend implements the same failover when loading the event index, logging the active domain to the console.
 
-**Frontend failover:** The browser UI also implements the same failover chain when fetching the event index. The active domain is logged to the browser console.
-
-**Hardcoded in:** `src/env.js` (`API_DOMAINS` array)
+> Hardcoded in `src/env.js` → `API_DOMAINS`.
 
 ### User Agent
 
 Set in `src/env.js` — mimics Chrome on macOS to avoid bot detection.
 
-## Mobile Support
+---
+
+## 📱 Mobile Support
 
 ### Copy Button Fallback
 
-Mobile browsers (especially iOS Safari) may block `navigator.clipboard.writeText()`.
+Mobile browsers (especially iOS Safari) may block `navigator.clipboard.writeText()`:
 
-**Fallback flow:**
-1. Try `navigator.clipboard.writeText()`
-2. On failure: select text in input + `document.execCommand('copy')`
-3. User sees text selected + can tap "Copy" from context menu
+1. Try `navigator.clipboard.writeText()`.
+2. On failure, select the input text and run `document.execCommand('copy')`.
+3. User sees the text selected and can tap **Copy** from the context menu.
 
 ### Layout Adaptations
 
-- Single-column on screens < 1200px
+- Single-column below 1200px
 - Touch-friendly button sizes
-- Video player uses native controls
-- Filter/category inputs use mobile keyboard types
+- Native `<video>` controls
+- Mobile-optimized keyboard types for filters
 
-### HLS Playback
+### HLS Playback Matrix
 
-- **iOS Safari:** Native HLS in `<video>` element
-- **Android Chrome:** HLS.js falls back to native if needed
-- **Desktop Chrome/Firefox:** HLS.js required (included)
+| Platform               | Engine              |
+|------------------------|---------------------|
+| iOS Safari             | Native HLS          |
+| Android Chrome         | HLS.js → native     |
+| Desktop Chrome/Firefox | HLS.js (bundled)    |
 
-## Disclaimer
+---
+
+## ⚠️ Disclaimer
 
 This project:
-- Does **not** host, store, or distribute media content
-- Only reads **public API metadata**
-- Calls embed endpoints the same way a browser player would
-- Proxies streams for browser compatibility (like a CORS proxy)
+
+- Does **not** host, store, or distribute media content.
+- Only reads **public API metadata**.
+- Calls embed endpoints the same way a browser player would.
+- Proxies streams for browser compatibility (like a CORS proxy).
 
 **You are responsible for:**
-- Complying with copyright law in your jurisdiction
-- Respecting site terms of service
-- Using only on content you have the right to access
+
+- Complying with copyright law in your jurisdiction.
+- Respecting site terms of service.
+- Using only on content you have the right to access.
 
 **No warranty.** Use at your own risk.
