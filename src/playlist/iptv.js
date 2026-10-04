@@ -45,7 +45,10 @@ async function fetchStreamMeta(uri) {
         headers: { 'User-Agent': USER_AGENT },
       })
       if (!res.ok) {
-        lastError = `upstream ${res.status}`
+        // A genuine upstream 404 means the item doesn't exist anywhere —
+        // don't waste 6 more round trips walking the mirror chain.
+        if (res.status === 404) throw new Error(`not found: ${uri}`)
+        lastError = `upstream ${res.status} from ${base}`
         continue
       }
       const json = await res.json()
@@ -122,6 +125,24 @@ export async function generatePlaylist(origin, categoryFilter) {
 }
 
 /**
+ * Find a substream by uri_name across the full event index.
+ * Substream URIs are not top-level API items — they only exist nested
+ * inside their parent stream's index entry, so a failed fetchStreamMeta()
+ * for e.g. "247-willow-2" must fall back to this lookup.
+ */
+async function findSubstream(uri) {
+  const categories = await fetchAllStreams()
+  for (const cat of categories) {
+    for (const stream of cat.streams || []) {
+      for (const sub of stream.substreams || []) {
+        if (sub.uri_name === uri && sub.iframe) return sub
+      }
+    }
+  }
+  return null
+}
+
+/**
  * Resolve a live channel URI to its stream URL and embed context.
  * Used by the /live/ endpoint to relay HLS on-the-fly.
  *
@@ -129,7 +150,18 @@ export async function generatePlaylist(origin, categoryFilter) {
  * @returns {Promise<{streamUrl: string, embed: {origin: string, path: string}}>}
  */
 export async function resolveLiveChannel(uri) {
-  const data = await fetchStreamMeta(uri)
+  let data = null
+  try {
+    data = await fetchStreamMeta(uri)
+  } catch (err) {
+    // Top-level lookup failed — the URI may be a substream (e.g. "247-willow-2").
+    // Resolve via its iframe URL from the event index, like /api/embed does.
+    const sub = await findSubstream(uri)
+    if (!sub) throw err
+    const embed = embedFromSource({ data: sub.iframe })
+    const streamUrl = await resolveEmbedStreamUrl(embed)
+    return { streamUrl, embed }
+  }
 
   const source = (data.sources || []).find((s) => s.default)
   if (!source?.data) throw new Error('no default embed source')
