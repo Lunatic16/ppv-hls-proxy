@@ -39,8 +39,11 @@ async function fetchMeta(uri) {
       const res = await fetch(`${base}/streams/${uri}`, {
         headers: { 'User-Agent': USER_AGENT },
       })
-      
+
       if (!res.ok) {
+        // A genuine upstream 404 means the item doesn't exist —
+        // no point walking the remaining mirrors.
+        if (res.status === 404) throw new Error(`not found: ${uri}`)
         lastError = `upstream ${res.status} from ${base}`
         continue // try next domain
       }
