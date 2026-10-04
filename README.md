@@ -330,6 +330,8 @@ src/
     hls.js               # relayHls() — fetch, playlist vs segment
     rewrite.js           # rewritePlaylist(), syncLiveMediaPlaylist()
     segment.js           # segmentBody() — TS payload strip
+  playlist/
+    iptv.js              # New module — playlist generation + per-channel resolution
   embed/
     context.js           # embedFromSource(), relayUrl()
     decrypt.js           # resolveEmbedStreamUrl() — /fetch + WASM
