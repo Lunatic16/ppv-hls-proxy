@@ -370,32 +370,60 @@ async function play(url) {
   await vid.play().catch(() => {})
 }
 
+/**
+ * Copy text to clipboard with the same fallback used by the Export buttons.
+ * navigator.clipboard is undefined in insecure contexts (plain HTTP on a
+ * LAN IP), so fall back to selecting text + document.execCommand('copy').
+ * When `node` is given its selection stays visible (iOS manual-copy cue);
+ * otherwise a temporary off-screen textarea is used and removed.
+ * @returns {Promise<boolean>} true if the copy succeeded
+ */
+async function copyToClipboard(text, node = null) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // fall through to execCommand fallback
+    }
+  }
+
+  let tmp = null
+  if (!node) {
+    tmp = document.createElement('textarea')
+    tmp.value = text
+    tmp.setAttribute('readonly', '')
+    tmp.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;'
+    document.body.appendChild(tmp)
+    node = tmp
+  }
+  node.focus()
+  node.select()
+  if (node.setSelectionRange) node.setSelectionRange(0, text.length)
+  let ok = false
+  try {
+    ok = document.execCommand('copy')
+  } catch {
+    ok = false
+  }
+  if (tmp) tmp.remove()
+  return ok
+}
+
 document.querySelectorAll('[data-copy]').forEach((btn) => {
   btn.addEventListener('click', async () => {
     const node = $(btn.dataset.copy)
-    const text = node.value
-    
-    // Try clipboard API first
-    try {
-      await navigator.clipboard.writeText(text)
+    const copied = await copyToClipboard(node.value, node)
+    if (copied) {
       showCopied(btn)
       return
-    } catch (err) {
-      // Fallback: select text in input
-      node.select()
-      node.setSelectionRange(0, 99999) // Mobile Safari support
-      try {
-        document.execCommand('copy')
-        showCopied(btn)
-      } catch (err2) {
-        btn.textContent = 'Failed'
-        btn.classList.add('err')
-        setTimeout(() => {
-          btn.textContent = 'Copy'
-          btn.classList.remove('err')
-        }, 1500)
-      }
     }
+    btn.textContent = 'Failed'
+    btn.classList.add('err')
+    setTimeout(() => {
+      btn.textContent = 'Copy'
+      btn.classList.remove('err')
+    }, 1500)
   })
 })
 
@@ -423,8 +451,8 @@ category.addEventListener('change', renderEvents)
 const copyPlaylistBtn = $('copy-playlist-btn')
 copyPlaylistBtn.addEventListener('click', async () => {
   const url = `${location.origin}/playlist.m3u8`
-  try {
-    await navigator.clipboard.writeText(url)
+  const copied = await copyToClipboard(url)
+  if (copied) {
     const label = copyPlaylistBtn.innerHTML
     copyPlaylistBtn.textContent = '✓ Copied!'
     copyPlaylistBtn.classList.add('btn--copied')
@@ -432,7 +460,7 @@ copyPlaylistBtn.addEventListener('click', async () => {
       copyPlaylistBtn.innerHTML = label
       copyPlaylistBtn.classList.remove('btn--copied')
     }, 1500)
-  } catch {
+  } else {
     prompt('Copy this playlist URL:', url)
   }
 })
