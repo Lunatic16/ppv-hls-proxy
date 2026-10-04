@@ -419,4 +419,22 @@ backBtn.addEventListener('click', () => {
 filter.addEventListener('input', renderEvents)
 category.addEventListener('change', renderEvents)
 
+// Copy playlist URL to clipboard
+const copyPlaylistBtn = $('copy-playlist-btn')
+copyPlaylistBtn.addEventListener('click', async () => {
+  const url = `${location.origin}/playlist.m3u8`
+  try {
+    await navigator.clipboard.writeText(url)
+    const label = copyPlaylistBtn.innerHTML
+    copyPlaylistBtn.textContent = '✓ Copied!'
+    copyPlaylistBtn.classList.add('btn--copied')
+    setTimeout(() => {
+      copyPlaylistBtn.innerHTML = label
+      copyPlaylistBtn.classList.remove('btn--copied')
+    }, 1500)
+  } catch {
+    prompt('Copy this playlist URL:', url)
+  }
+})
+
 loadEvents()

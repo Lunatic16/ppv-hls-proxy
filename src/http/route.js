@@ -2,6 +2,7 @@ import { embedFromQuery, embedFromSource } from '../embed/context.js'
 import { relayHls } from '../relay/hls.js'
 import { resolveStream } from '../resolve/stream.js'
 import { resolveEmbedStreamUrl } from '../embed/decrypt.js'
+import { generatePlaylist, resolveLiveChannel } from '../playlist/iptv.js'
 import { json, readBody, text } from './respond.js'
 import { serveStatic } from './static.js'
 
@@ -49,6 +50,41 @@ export async function onReq(req, res) {
       } catch (err) {
         return json(res, 500, { ok: false, stage: 'decrypt', error: String(err.message || err) })
       }
+    }
+
+    // IPTV M3U playlist — for TiviMate, IPTV Smarters, etc.
+    if (pathname === '/playlist.m3u8' || pathname === '/playlist') {
+      try {
+        const category = searchParams.get('category') || ''
+        const playlist = await generatePlaylist(origin, category || undefined)
+        if (res.headersSent) return
+        res.writeHead(200, {
+          'Content-Type': 'application/x-mpegurl',
+          'Content-Disposition': 'inline; filename="playlist.m3u8"',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store',
+        })
+        res.end(playlist)
+      } catch (err) {
+        text(res, 502, String(err.message || 'playlist generation failed'))
+      }
+      return
+    }
+
+    // Per-channel live relay — resolves + proxies HLS on the fly
+    if (pathname.startsWith('/live/')) {
+      let uri = pathname.slice(6) // strip "/live/"
+      if (uri.endsWith('.m3u8')) uri = uri.slice(0, -5)
+      uri = decodeURIComponent(uri)
+      if (!uri) return text(res, 400, 'channel uri required')
+
+      try {
+        const { streamUrl, embed } = await resolveLiveChannel(uri)
+        await relayHls(res, streamUrl, embed, origin)
+      } catch (err) {
+        text(res, 502, String(err.message || 'stream resolution failed'))
+      }
+      return
     }
 
     if (serveStatic(pathname, res)) return

@@ -83,6 +83,11 @@ body {
 
 .top {
   margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .top__title {
@@ -106,6 +111,56 @@ body {
 
 .top__desc a:hover {
   text-decoration: underline;
+}
+
+.top__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn:hover {
+  background: #25252c;
+  border-color: var(--accent);
+}
+
+.btn--playlist {
+  background: rgba(110, 168, 254, 0.1);
+  border-color: rgba(110, 168, 254, 0.35);
+  color: var(--accent);
+}
+
+.btn--playlist:hover {
+  background: rgba(110, 168, 254, 0.18);
+  border-color: var(--accent);
+}
+
+.btn--copy-playlist svg {
+  opacity: 0.7;
+}
+
+.btn--copied {
+  border-color: var(--ok) !important;
+  color: var(--ok) !important;
 }
 
 .card {
