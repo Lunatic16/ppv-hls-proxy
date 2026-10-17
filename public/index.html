@@ -12,42 +12,66 @@
     <header class="top">
       <div class="top__brand">
         <h1 class="top__title">PPV Stream Browser</h1>
-        <p class="top__desc">Browse live events from <a href="https://ppv.st" target="_blank" rel="noopener">ppv.st</a>, select a stream, and play it here or copy links for VLC/MPV.</p>
+        <p class="top__desc">Browse live events from <a href="https://ppv.st" target="_blank" rel="noopener">ppv.st</a>, pick a stream, and play it here or copy links for VLC/MPV.</p>
       </div>
       <div class="top__actions">
-        <a id="playlist-btn" class="btn btn--playlist" href="/playlist.m3u8" download="playlist.m3u8" title="Download M3U8 playlist for TiviMate, IPTV Smarters, etc.">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8m0 0L5 7m3 3 3-3"/><path d="M2 11v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2"/></svg>
-          M3U Playlist
+        <a id="playlist-btn" class="btn btn--playlist" href="/playlist.m3u8" download="playlist.m3u8" title="Download the live-events M3U8 playlist for TiviMate, IPTV Smarters, etc.">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8m0 0L5 7m3 3 3-3"/><path d="M2 11v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2"/></svg>
+          Live Playlist
         </a>
         <button id="copy-playlist-btn" class="btn btn--copy-playlist" type="button" title="Copy playlist URL to clipboard">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="8" height="8" rx="1"/><path d="M3 11V3a1 1 0 0 1 1-1h8"/></svg>
-          Copy URL
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1"/><path d="M3 11V3a1 1 0 0 1 1-1h8"/></svg>
+          <span class="btn__label">Copy URL</span>
         </button>
       </div>
     </header>
 
-    <section class="card">
+    <section class="card browser-card" id="browser-card">
       <div class="browser" id="events-container">
         <div class="browser__filters">
-          <input id="filter" type="text" placeholder="Filter events…">
-          <select id="category">
-            <option value="">All Categories</option>
+          <input id="filter" type="search" placeholder="Search events…" aria-label="Search events" autocomplete="off">
+          <select id="category" aria-label="Category">
+            <option value="">All categories</option>
           </select>
         </div>
-        <div id="events" class="browser__list"></div>
+        <div class="browser__bar">
+          <div class="seg" id="status-seg" role="group" aria-label="Show">
+            <button type="button" class="seg__btn is-active" data-status="live" aria-pressed="true">Live <span class="seg__n" id="n-live">0</span></button>
+            <button type="button" class="seg__btn" data-status="upcoming" aria-pressed="false">Upcoming <span class="seg__n" id="n-upcoming">0</span></button>
+            <button type="button" class="seg__btn" data-status="all" aria-pressed="false">All <span class="seg__n" id="n-all">0</span></button>
+          </div>
+          <button id="refresh-btn" class="icon-btn" type="button" title="Refresh events" aria-label="Refresh events">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
+          </button>
+        </div>
+        <div id="events" class="browser__list" role="list"></div>
       </div>
 
       <div id="source-section" class="source-section" hidden>
         <button id="back-btn" class="back-btn" type="button">← Back to events</button>
-        <div id="source-list" class="source-list"></div>
+        <div id="source-list"></div>
       </div>
     </section>
 
+    <aside id="placeholder" class="card placeholder">
+      <p class="placeholder__title">Nothing playing</p>
+      <p class="placeholder__desc">Pick an event on the left, then choose a source to start watching.</p>
+    </aside>
+
     <section id="out" class="stack" hidden>
       <div class="card">
-        <h2 id="title" class="stream-title">Stream</h2>
+        <div class="player-head">
+          <h2 id="title" class="stream-title">Stream</h2>
+          <button id="close-btn" class="icon-btn" type="button" title="Stop and close player" aria-label="Stop and close player">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>
+          </button>
+        </div>
         <div class="player">
-          <video id="vid" controls></video>
+          <video id="vid" controls playsinline></video>
+          <div id="player-status" class="player__status" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <span id="player-status-text">Resolving stream…</span>
+          </div>
         </div>
       </div>
 
@@ -60,7 +84,7 @@
               <span class="export__hint">Upstream M3U8 playlist</span>
             </div>
             <div class="export__row">
-              <input id="direct" readonly>
+              <input id="direct" readonly aria-label="Direct URL">
               <button type="button" data-copy="direct">Copy</button>
             </div>
           </li>
@@ -70,7 +94,7 @@
               <span class="export__hint">Stream through this server</span>
             </div>
             <div class="export__row">
-              <input id="proxy" readonly>
+              <input id="proxy" readonly aria-label="Proxied URL">
               <button type="button" data-copy="proxy">Copy</button>
             </div>
           </li>
@@ -80,7 +104,7 @@
               <span class="export__hint">Open Network Stream command</span>
             </div>
             <div class="export__row">
-              <input id="vlc" readonly>
+              <input id="vlc" readonly aria-label="VLC command">
               <button type="button" data-copy="vlc">Copy</button>
             </div>
           </li>
@@ -90,7 +114,7 @@
               <span class="export__hint">Terminal playback command</span>
             </div>
             <div class="export__row">
-              <input id="mpv" readonly>
+              <input id="mpv" readonly aria-label="MPV command">
               <button type="button" data-copy="mpv">Copy</button>
             </div>
           </li>
@@ -98,7 +122,7 @@
       </div>
     </section>
 
-    <p id="err" class="msg msg--err" hidden></p>
+    <p id="err" class="msg msg--err" role="alert" hidden></p>
   </div>
   <script type="module" src="/js/app.js"></script>
 </body>

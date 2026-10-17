@@ -5,12 +5,18 @@ const category = $('category')
 const events = $('events')
 const eventsContainer = $('events-container')
 const out = $('out')
+const placeholder = $('placeholder')
 const sourceSection = $('source-section')
 const sourceList = $('source-list')
 const backBtn = $('back-btn')
+const closeBtn = $('close-btn')
+const refreshBtn = $('refresh-btn')
+const statusSeg = $('status-seg')
 const title = $('title')
 const vid = $('vid')
 const err = $('err')
+const playerStatus = $('player-status')
+const playerStatusText = $('player-status-text')
 const fields = {
   direct: $('direct'),
   proxy: $('proxy'),
@@ -18,153 +24,234 @@ const fields = {
   mpv: $('mpv'),
 }
 
+// Events with a start time but no end time count as live for this long.
+const LIVE_WINDOW_SECS = 4 * 3600
+const REFRESH_MS = 5 * 60 * 1000
+const RERENDER_MS = 60 * 1000
+
 let hls = null
 let allEvents = []
-let categories = new Set()
 let currentEvent = null
 let currentSources = []
+let currentUri = null
+let currentSrcIdx = -1
+let statusFilter = 'live' // live | upcoming | all
+let playToken = 0
 
 // API domain failover for frontend
 const API_DOMAINS = ['ppv.st', 'ppv.cx', 'ppv.to', 'ppv.is', 'ppv.lc']
-let currentApiDomain = API_DOMAINS[0]
 
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g
+const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 
-function stripAnsi(s) {
-  return s.replace(ANSI_RE, '')
+function clean(s) {
+  return String(s ?? '').replace(ANSI_RE, '')
 }
 
-function formatTime(unixTs, endsAt = 0) {
-  if (!unixTs) return { text: '—', state: 'info' }
-  const now = Math.floor(Date.now() / 1000)
-  let state
-  if (endsAt && endsAt < now) state = 'ended'
-  else if (unixTs <= now) state = 'live'
-  else if (unixTs - now < 86400) state = 'soon'
-  else state = 'info'
-  
-  const d = new Date(unixTs * 1000)
-  const txt = d.toLocaleString('en-US', { 
-    month: 'short', day: '2-digit', 
-    hour: '2-digit', minute: '2-digit',
-    timeZoneName: 'short'
-  })
-  return { text: txt, state }
+function esc(s) {
+  return clean(s).replace(/[&<>"']/g, (c) => HTML_ESC[c])
 }
 
-function renderEvent(ev) {
-  const { text, state } = formatTime(ev.starts_at, ev.ends_at)
-  
-  let badge, badgeText
-  if (ev.always_live) { badge = 'badge--live'; badgeText = '24/7' }
-  else if (state === 'live') { badge = 'badge--live'; badgeText = 'LIVE' }
-  else if (state === 'soon') { badge = 'badge--soon'; badgeText = 'SOON' }
-  else if (state === 'ended') { badge = 'badge'; badgeText = 'DONE' }
-  else { badge = 'badge'; badgeText = '' }
-  
-  const source = ev.source_tag || ''
-  const cat = ev.category_name || ''
-  
-  const substreamCount = (ev.substreams || []).length
-  
-  return {
-    raw: ev,
-    text: `${badgeText}  ${ev.name}  ${source}  ${text}  ${cat}`,
-    searchable: `${ev.name} ${source} ${cat}`.toLowerCase(),
-    state,
-    substreamCount
+/* ---------- Event state ---------- */
+
+function getState(ev, now = Math.floor(Date.now() / 1000)) {
+  if (ev.always_live) return 'live'
+  if (!ev.starts_at) return 'info'
+  if (ev.ends_at && ev.ends_at < now) return 'ended'
+  if (ev.starts_at <= now) {
+    if (!ev.ends_at && now - ev.starts_at > LIVE_WINDOW_SECS) return 'ended'
+    return 'live'
   }
+  if (ev.starts_at - now < 86400) return 'soon'
+  return 'info'
+}
+
+function formatStart(ev) {
+  if (ev.always_live) return 'Always on'
+  if (!ev.starts_at) return ''
+  const d = new Date(ev.starts_at * 1000)
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function relative(ev, state, now) {
+  if (ev.always_live || !ev.starts_at) return ''
+  const diff = ev.starts_at - now
+  const abs = Math.abs(diff)
+  const h = Math.floor(abs / 3600)
+  const m = Math.floor((abs % 3600) / 60)
+  const span = h ? `${h}h ${m}m` : `${m}m`
+  if (state === 'live') return `started ${span} ago`
+  if (state === 'soon') return `in ${span}`
+  return ''
+}
+
+function badgeFor(ev, state) {
+  if (ev.always_live) return { cls: 'badge--live badge--247', text: '24/7' }
+  if (state === 'live') return { cls: 'badge--live', text: 'LIVE' }
+  if (state === 'soon') return { cls: 'badge--soon', text: 'SOON' }
+  if (state === 'ended') return { cls: '', text: 'DONE' }
+  return { cls: '', text: '' }
+}
+
+function matchesStatus(state) {
+  if (statusFilter === 'live') return state === 'live'
+  if (statusFilter === 'upcoming') return state === 'soon' || state === 'info'
+  return true
+}
+
+/* ---------- Rendering ---------- */
+
+function setCounts(now) {
+  let live = 0
+  let upcoming = 0
+  for (const ev of allEvents) {
+    const s = getState(ev, now)
+    if (s === 'live') live++
+    else if (s === 'soon' || s === 'info') upcoming++
+  }
+  $('n-live').textContent = live
+  $('n-upcoming').textContent = upcoming
+  $('n-all').textContent = allEvents.length
 }
 
 function renderEvents() {
-  const q = filter.value.toLowerCase()
+  const now = Math.floor(Date.now() / 1000)
+  const q = filter.value.trim().toLowerCase()
   const cat = category.value
-  
-  const filtered = allEvents.filter(ev => {
-    if (cat && ev.raw.category_name !== cat) return false
-    if (q && !ev.searchable.includes(q)) return false
-    return true
-  })
-  
-  // No additional sort needed - already sorted in loadEvents()
-  
-  if (filtered.length === 0) {
-    events.innerHTML = '<div class="browser__empty">No events match your filter</div>'
+
+  setCounts(now)
+
+  const rows = []
+  for (const ev of allEvents) {
+    if (cat && ev.category_name !== cat) continue
+    if (q && !ev.searchable.includes(q)) continue
+    const state = getState(ev, now)
+    if (!matchesStatus(state)) continue
+    rows.push({ ev, state })
+  }
+
+  if (rows.length === 0) {
+    const hint =
+      statusFilter === 'live' && allEvents.length
+        ? `<br><button type="button" class="btn" data-show-all>Show all events</button>`
+        : ''
+    events.innerHTML = `<div class="browser__empty">No ${statusFilter === 'all' ? '' : statusFilter + ' '}events match${hint}</div>`
+    events.querySelector('[data-show-all]')?.addEventListener('click', () => setStatus('all'))
     return
   }
-  
-  events.innerHTML = filtered.map(ev => {
-    const badgeClass = ev.raw.always_live ? 'badge--live' : 
-                       ev.state === 'live' ? 'badge--live' :
-                       ev.state === 'soon' ? 'badge--soon' : 'badge'
-    const badgeText = ev.raw.always_live ? '24/7' : 
-                      ev.state === 'live' ? 'LIVE' : 
-                      ev.state === 'soon' ? 'SOON' : 
-                      ev.state === 'ended' ? 'DONE' : ''
-    const subHint = ev.substreamCount > 0 ? `<span class="browser__subs">+${ev.substreamCount} more</span>` : ''
-    return `
-      <div class="browser__item" data-uri="${ev.raw.uri}">
-        <span class="badge ${badgeClass}">${badgeText}</span>
-        <span class="browser__name">${stripAnsi(ev.raw.name)}</span>
-        <span class="browser__source">${stripAnsi(ev.raw.source_tag || '')}</span>
-        <span class="browser__time">${ev.text}</span>
-        <span class="browser__cat">${stripAnsi(ev.raw.category_name || '')}</span>
-        ${subHint}
-      </div>
-    `
-  }).join('')
-  
-  events.querySelectorAll('.browser__item').forEach(item => {
-    item.addEventListener('click', () => showSources(item.dataset.uri))
+
+  // Sort: live, soon, later, ended — 24/7 channels last. Group headers between.
+  const order = { live: 0, soon: 1, info: 2, ended: 3 }
+  rows.sort((a, b) => {
+    if (a.ev.always_live !== b.ev.always_live) return a.ev.always_live ? 1 : -1
+    if (order[a.state] !== order[b.state]) return order[a.state] - order[b.state]
+    return a.ev.starts_at - b.ev.starts_at
   })
+
+  const groupOf = ({ ev, state }) =>
+    ev.always_live ? '24/7 channels' : state === 'live' ? 'Live now' : state === 'soon' ? 'Starting soon' : state === 'ended' ? 'Ended' : 'Later'
+
+  let lastGroup = null
+  const html = []
+  for (const row of rows) {
+    const g = groupOf(row)
+    if (g !== lastGroup) {
+      html.push(`<div class="group-label" role="presentation">${g}</div>`)
+      lastGroup = g
+    }
+    const { ev, state } = row
+    const badge = badgeFor(ev, state)
+    const rel = relative(ev, state, now)
+    const subCount = (ev.substreams || []).filter((s) => s.iframe).length
+    html.push(`
+      <button type="button" class="event${ev.uri === currentUri ? ' is-selected' : ''}" role="listitem" data-uri="${esc(ev.uri)}">
+        <span class="badge ${badge.cls}">${badge.text || '&nbsp;'}</span>
+        <span class="event__main">
+          <span class="event__name" title="${esc(ev.name)}">${esc(ev.name)}</span>
+          <span class="event__meta">
+            <span>${esc(ev.category_name)}</span>
+            ${ev.source_tag ? `<span class="event__dot">${esc(ev.source_tag)}</span>` : ''}
+          </span>
+        </span>
+        <span class="event__side">
+          <span>${esc(rel || formatStart(ev))}</span>
+          ${subCount > 0 ? `<span class="event__subs">+${subCount} more</span>` : ''}
+        </span>
+      </button>`)
+  }
+  events.innerHTML = html.join('')
 }
 
-async function loadEvents() {
-  events.innerHTML = '<div class="browser__loading">Loading events…</div>'
-  try {
-    let data = null
-    let lastErr = null
-    
-    // Try each API domain in order
-    for (const domain of API_DOMAINS) {
-      const apiBase = `https://api.${domain}/api`
-      try {
-        const res = await fetch(`${apiBase}/streams`)
-        if (!res.ok) {
-          lastErr = `HTTP ${res.status}`
-          continue
-        }
-        data = await res.json()
-        if (data?.success && data?.streams) {
-          currentApiDomain = domain
-          break
-        }
-        lastErr = data?.error || 'invalid response'
-      } catch (e) {
-        lastErr = e.message
+// One delegated handler instead of re-binding on every render.
+events.addEventListener('click', (e) => {
+  const item = e.target.closest('.event')
+  if (item) showSources(item.dataset.uri)
+})
+
+function setStatus(next) {
+  statusFilter = next
+  statusSeg.querySelectorAll('.seg__btn').forEach((b) => {
+    const on = b.dataset.status === next
+    b.classList.toggle('is-active', on)
+    b.setAttribute('aria-pressed', String(on))
+  })
+  renderEvents()
+  events.scrollTop = 0
+}
+
+statusSeg.addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg__btn')
+  if (btn) setStatus(btn.dataset.status)
+})
+
+/* ---------- Data ---------- */
+
+async function fetchStreams() {
+  let lastErr = null
+  for (const domain of API_DOMAINS) {
+    try {
+      const res = await fetch(`https://api.${domain}/api/streams`)
+      if (!res.ok) {
+        lastErr = `HTTP ${res.status}`
         continue
       }
+      const data = await res.json()
+      if (data?.success && data?.streams) return data.streams
+      lastErr = data?.error || 'invalid response'
+    } catch (e) {
+      lastErr = e.message
     }
-    
-    if (!data || !data.success) throw new Error(data?.error || lastErr || 'API returned success=false')
-    
-    const streams = data.streams || []
-        allEvents = []
-        categories = new Set()
-    
-        console.log(`Using API domain: api.${currentApiDomain}`)
+  }
+  throw new Error(lastErr || 'all API domains failed')
+}
 
-        streams.forEach(cat => {
+async function loadEvents({ quiet = false } = {}) {
+  if (!quiet) events.innerHTML = '<div class="browser__loading">Loading events…</div>'
+  refreshBtn.disabled = true
+  refreshBtn.classList.add('is-spinning')
+  try {
+    const streams = await fetchStreams()
+    const next = []
+    const cats = new Set()
+
+    streams.forEach((cat) => {
       const catName = cat.category || cat.category_name || '(?)'
-      categories.add(catName)
-      ;(cat.streams || []).forEach(raw => {
-        allEvents.push({
+      cats.add(catName)
+      ;(cat.streams || []).forEach((raw) => {
+        const name = clean(raw.name || '?')
+        const source = clean(raw.source_tag || '')
+        next.push({
           id: Number(raw.id) || 0,
-          name: raw.name || '?',
+          name,
           tag: raw.tag,
-          source_tag: raw.source_tag,
+          source_tag: source,
           locale: raw.locale,
-          category_name: catName,
+          category_name: clean(catName),
           uri: raw.uri_name || '',
           poster: raw.poster,
           starts_at: Number(raw.starts_at) || 0,
@@ -172,165 +259,174 @@ async function loadEvents() {
           viewers: Number(raw.viewers) || 0,
           always_live: !!raw.always_live,
           iframe: raw.iframe,
-          substreams: raw.substreams || []
+          substreams: raw.substreams || [],
+          searchable: `${name} ${source} ${catName}`.toLowerCase(),
         })
       })
     })
-    
-    const sortedCats = Array.from(categories).sort()
-    category.innerHTML = '<option value="">All Categories</option>' + 
-      sortedCats.map(c => `<option value="${c}">${c}</option>`).join('')
-    
-    // Sort: LIVE first, SOON next, then by start time, 24/7 always at bottom
-    allEvents.sort((a, b) => {
-      // 24/7 events ALWAYS at bottom, regardless of state
-      if (a.always_live && !b.always_live) return 1
-      if (!a.always_live && b.always_live) return -1
-      
-      // For non-24/7 events: LIVE before SOON before others
-      const aState = formatTime(a.starts_at, a.ends_at).state
-      const bState = formatTime(b.starts_at, b.ends_at).state
-      const stateOrder = { live: 0, soon: 1, info: 2, ended: 3 }
-      
-      if (stateOrder[aState] !== stateOrder[bState]) {
-        return stateOrder[aState] - stateOrder[bState]
-      }
-      
-      // Within same state, sort by start time
-      return a.starts_at - b.starts_at
-    })
-    
-    console.log(`Sorted ${allEvents.length} events. 24/7 count: ${allEvents.filter(e => e.always_live).length}`)
-    console.log('First 3 events (names + always_live):', JSON.stringify(allEvents.slice(0, 3).map(e => ({ name: e.name.substring(0, 25), always_live: e.always_live }))))
-    console.log('Last 3 events (names + always_live):', JSON.stringify(allEvents.slice(-3).map(e => ({ name: e.name.substring(0, 25), always_live: e.always_live }))))
-    
-    const rendered = allEvents.map(renderEvent)
-    allEvents = rendered
-    
+
+    allEvents = next
+
+    const selected = category.value
+    const sortedCats = Array.from(cats).map(clean).sort()
+    category.innerHTML =
+      '<option value="">All categories</option>' +
+      sortedCats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')
+    if (sortedCats.includes(selected)) category.value = selected
+
     renderEvents()
   } catch (error) {
-    events.innerHTML = `<div class="browser__error">Failed to load events: ${error.message}</div>`
+    if (quiet && allEvents.length) return // keep showing the last good list
+    events.innerHTML = `<div class="browser__error">Failed to load events: ${esc(error.message)}<br><button type="button" class="btn" data-retry>Retry</button></div>`
+    events.querySelector('[data-retry]')?.addEventListener('click', () => loadEvents())
+  } finally {
+    refreshBtn.disabled = false
+    refreshBtn.classList.remove('is-spinning')
   }
 }
 
-async function showSources(uri) {
+/* ---------- Source picker & playback ---------- */
+
+function showError(message) {
+  err.textContent = message
+  err.hidden = false
+}
+
+function showSources(uri) {
   err.hidden = true
-  out.hidden = true
-  sourceSection.hidden = false
-  sourceList.innerHTML = '<div class="browser__loading">Loading sources…</div>'
-  eventsContainer.classList.add('browser--sources')
-  
-  try {
-    // Find the event in our cached data (which has substreams from the index)
-    const event = allEvents.find(ev => ev.raw.uri === uri)
-    if (!event) throw new Error('Event not found')
-    
-    const raw = event.raw
-    currentEvent = raw
-    
-    // Build sources list: default iframe + substreams
-    currentSources = []
-    
-    // Add default source if exists
-    if (raw.iframe) {
-      currentSources.push({
-        label: raw.source_tag || 'Default',
-        locale: raw.locale,
-        data: raw.iframe,
-        isDefault: true
-      })
-    }
-    
-    // Add substreams
-    ;(raw.substreams || []).forEach(sub => {
-      if (sub.iframe) {
-        currentSources.push({
-          label: sub.source_tag || sub.uri_name || 'Stream',
-          locale: sub.locale,
-          data: sub.iframe,
-          isDefault: false
-        })
-      }
-    })
-    
-    if (currentSources.length === 0) {
-      throw new Error('No playable sources found')
-    }
-    
-    // Render source list
-    sourceList.innerHTML = `
-      <h3 class="source-section__title">${stripAnsi(raw.name)}</h3>
-      <p class="source-section__desc">Select a source to play:</p>
-      <div class="source-list">
-        ${currentSources.map((src, idx) => `
-          <div class="source-item ${src.isDefault ? 'source-item--default' : ''}" data-idx="${idx}">
-            <span class="source-item__label">${stripAnsi(src.label)}</span>
-            ${src.locale ? `<span class="source-item__locale">${stripAnsi(src.locale)}</span>` : ''}
-            ${src.isDefault ? '<span class="source-item__badge">default</span>' : ''}
-          </div>
-        `).join('')}
-      </div>
-    `
-    
-    // Add click handlers
-    sourceList.querySelectorAll('.source-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const idx = parseInt(item.dataset.idx, 10)
-        selectSource(idx)
-      })
-    })
-    
-  } catch (error) {
-    err.textContent = error.message
-    err.hidden = false
-    sourceSection.hidden = true
-    eventsContainer.classList.remove('browser--sources')
+
+  const event = allEvents.find((ev) => ev.uri === uri)
+  if (!event) {
+    showError('Event not found — try refreshing the list.')
+    return
   }
+
+  currentEvent = event
+  currentUri = uri
+  currentSrcIdx = -1
+
+  currentSources = []
+  if (event.iframe) {
+    currentSources.push({
+      label: event.source_tag || 'Default',
+      locale: event.locale,
+      data: event.iframe,
+      isDefault: true,
+    })
+  }
+  ;(event.substreams || []).forEach((sub) => {
+    if (sub.iframe) {
+      currentSources.push({
+        label: clean(sub.source_tag || sub.uri_name || 'Stream'),
+        locale: sub.locale,
+        data: sub.iframe,
+        isDefault: false,
+      })
+    }
+  })
+
+  if (currentSources.length === 0) {
+    showError('No playable sources found for this event.')
+    return
+  }
+
+  // Single source: skip the picker and play straight away.
+  if (currentSources.length === 1) {
+    renderEvents()
+    selectSource(0)
+    return
+  }
+
+  sourceList.innerHTML = `
+    <h3 class="source-section__title">${esc(event.name)}</h3>
+    <p class="source-section__desc">Choose a source to play (${currentSources.length} available):</p>
+    <div class="source-list">
+      ${currentSources
+        .map(
+          (src, idx) => `
+        <button type="button" class="source-item${src.isDefault ? ' source-item--default' : ''}" data-idx="${idx}">
+          <span class="source-item__label">${esc(src.label)}</span>
+          ${src.locale ? `<span class="source-item__locale">${esc(src.locale)}</span>` : ''}
+          ${src.isDefault ? '<span class="source-item__badge">default</span>' : ''}
+        </button>`,
+        )
+        .join('')}
+    </div>
+  `
+  sourceSection.hidden = false
+  eventsContainer.classList.add('browser--sources')
+  sourceList.querySelector('.source-item')?.focus()
+}
+
+sourceList.addEventListener('click', (e) => {
+  const item = e.target.closest('.source-item')
+  if (item) selectSource(parseInt(item.dataset.idx, 10))
+})
+
+function showList() {
+  sourceSection.hidden = true
+  eventsContainer.classList.remove('browser--sources')
+  renderEvents()
 }
 
 function selectSource(idx) {
   const src = currentSources[idx]
   if (!src) return
-  
+
+  currentSrcIdx = idx
   sourceSection.hidden = true
-  // Keep events collapsed - don't remove browser--sources class
+  eventsContainer.classList.remove('browser--sources')
   out.hidden = false
+  placeholder.classList.add('is-hidden')
   title.textContent = `${currentEvent.name}${src.locale ? ` [${src.locale}]` : ''}`
-  
-  // Use the proxy resolver with the iframe URL
+  renderEvents()
+
+  // On narrow screens the player stacks below the list — bring it into view.
+  if (window.matchMedia('(max-width: 1099px)').matches) {
+    out.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   resolveAndPlay(src.data)
 }
 
+function setPlayerStatus(text) {
+  playerStatus.hidden = !text
+  if (text) playerStatusText.textContent = text
+}
+
 async function resolveAndPlay(iframeUrl) {
+  const token = ++playToken
   err.hidden = true
-  
+  stop()
+  setPlayerStatus('Resolving stream…')
+  Object.values(fields).forEach((f) => (f.value = ''))
+
   try {
-    // Use the embed endpoint which handles iframe URLs directly
     const res = await fetch('/api/embed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ iframe: iframeUrl }),
     })
     const data = await res.json()
+    if (token !== playToken) return // superseded by a newer selection
     if (!data.ok) throw new Error(`${data.stage || 'error'}: ${data.error || 'resolve failed'}`)
     if (!data.streamUrl || !data.proxiedUrl) throw new Error('missing stream URLs in response')
-    
-    try {
-      await stop() // Stop any existing playback before starting new one
-    } catch (e) {
-      console.warn('Error stopping previous playback:', e)
-    }
 
     fields.direct.value = data.streamUrl
     fields.proxy.value = data.proxiedUrl
     fields.vlc.value = vlc(data.proxiedUrl)
     fields.mpv.value = mpv(data.proxiedUrl, data.embed)
-    await play(data.proxiedUrl)
 
+    setPlayerStatus('Loading video…')
+    await play(data.proxiedUrl, token)
+    if (token === playToken) setPlayerStatus('')
   } catch (error) {
-    err.textContent = error.message
-    err.hidden = false
-    out.hidden = true
+    if (token !== playToken) return
+    setPlayerStatus('')
+    showError(error.message)
+    // Keep the export links visible if we got that far; otherwise hide the panel.
+    if (!fields.proxy.value) out.hidden = true
+    if (out.hidden) placeholder.classList.remove('is-hidden')
   }
 }
 
@@ -340,7 +436,7 @@ function vlc(url) {
 
 function mpv(url, name) {
   if (!name) return `mpv "${url}"`
-  return `mpv --force-media-title="${name.replace(/"/g, '\\"')}" "${url}"`
+  return `mpv --force-media-title="${String(name).replace(/"/g, '\\"')}" "${url}"`
 }
 
 function stop() {
@@ -348,34 +444,36 @@ function stop() {
     hls.destroy()
     hls = null
   }
+  vid.pause()
   vid.removeAttribute('src')
   vid.load()
 }
 
-async function play(url) {
-  stop()
+async function play(url, token) {
   const { default: Hls } = await import('https://cdn.jsdelivr.net/npm/hls.js@1.5.20/+esm')
+  if (token !== playToken) return
   if (!Hls.isSupported()) {
     throw new Error('HLS playback is not supported in this browser. Use VLC or MPV.')
   }
   hls = new Hls()
-  hls.loadSource(url)
-  hls.attachMedia(vid)
+  const instance = hls
+  instance.loadSource(url)
+  instance.attachMedia(vid)
   await new Promise((resolve, reject) => {
-    hls.on(Hls.Events.MANIFEST_PARSED, resolve)
-    hls.on(Hls.Events.ERROR, (_, data) => {
-      if (data.fatal) reject(new Error('playback failed'))
+    instance.on(Hls.Events.MANIFEST_PARSED, resolve)
+    instance.on(Hls.Events.ERROR, (_, data) => {
+      if (data.fatal) reject(new Error('playback failed — try another source'))
     })
   })
+  if (token !== playToken) return
   await vid.play().catch(() => {})
 }
 
+/* ---------- Clipboard ---------- */
+
 /**
- * Copy text to clipboard with the same fallback used by the Export buttons.
- * navigator.clipboard is undefined in insecure contexts (plain HTTP on a
- * LAN IP), so fall back to selecting text + document.execCommand('copy').
- * When `node` is given its selection stays visible (iOS manual-copy cue);
- * otherwise a temporary off-screen textarea is used and removed.
+ * Copy text to clipboard with a fallback for insecure contexts (plain HTTP on
+ * a LAN IP), where navigator.clipboard is undefined.
  * @returns {Promise<boolean>} true if the copy succeeded
  */
 async function copyToClipboard(text, node = null) {
@@ -410,59 +508,75 @@ async function copyToClipboard(text, node = null) {
   return ok
 }
 
+function flash(btn, text, cls, ms) {
+  const label = btn.dataset.label ?? btn.textContent
+  btn.dataset.label = label
+  btn.textContent = text
+  btn.classList.add(cls)
+  setTimeout(() => {
+    btn.textContent = label
+    btn.classList.remove(cls)
+    delete btn.dataset.label
+  }, ms)
+}
+
 document.querySelectorAll('[data-copy]').forEach((btn) => {
   btn.addEventListener('click', async () => {
     const node = $(btn.dataset.copy)
+    if (!node.value) return
     const copied = await copyToClipboard(node.value, node)
-    if (copied) {
-      showCopied(btn)
-      return
-    }
-    btn.textContent = 'Failed'
-    btn.classList.add('err')
-    setTimeout(() => {
-      btn.textContent = 'Copy'
-      btn.classList.remove('err')
-    }, 1500)
+    if (copied) flash(btn, 'Copied', 'ok', 1200)
+    else flash(btn, 'Failed', 'err', 1500)
   })
 })
 
-function showCopied(btn) {
-  const label = btn.textContent
-  btn.textContent = 'Copied'
-  btn.classList.add('ok')
-  setTimeout(() => {
-    btn.textContent = label
-    btn.classList.remove('ok')
-  }, 1200)
-}
+/* ---------- Wiring ---------- */
 
-backBtn.addEventListener('click', () => {
-  sourceSection.hidden = true
-  eventsContainer.classList.remove('browser--sources')
+backBtn.addEventListener('click', showList)
+
+closeBtn.addEventListener('click', () => {
+  playToken++
+  stop()
+  setPlayerStatus('')
   out.hidden = true
-  //stop()
+  placeholder.classList.remove('is-hidden')
+  currentUri = null
+  err.hidden = true
+  renderEvents()
 })
 
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !sourceSection.hidden) showList()
+})
+
+refreshBtn.addEventListener('click', () => loadEvents({ quiet: true }))
 filter.addEventListener('input', renderEvents)
 category.addEventListener('change', renderEvents)
 
 // Copy playlist URL to clipboard
 const copyPlaylistBtn = $('copy-playlist-btn')
+const copyPlaylistLabel = copyPlaylistBtn.querySelector('.btn__label')
 copyPlaylistBtn.addEventListener('click', async () => {
   const url = `${location.origin}/playlist.m3u8`
   const copied = await copyToClipboard(url)
   if (copied) {
-    const label = copyPlaylistBtn.innerHTML
-    copyPlaylistBtn.textContent = '✓ Copied!'
+    copyPlaylistLabel.textContent = 'Copied!'
     copyPlaylistBtn.classList.add('btn--copied')
     setTimeout(() => {
-      copyPlaylistBtn.innerHTML = label
+      copyPlaylistLabel.textContent = 'Copy URL'
       copyPlaylistBtn.classList.remove('btn--copied')
     }, 1500)
   } else {
     prompt('Copy this playlist URL:', url)
   }
 })
+
+// Keep LIVE/SOON badges honest and pick up new events without a manual reload.
+setInterval(() => {
+  if (!document.hidden) renderEvents()
+}, RERENDER_MS)
+setInterval(() => {
+  if (!document.hidden) loadEvents({ quiet: true })
+}, REFRESH_MS)
 
 loadEvents()

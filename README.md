@@ -1,3 +1,4 @@
+</div>
 # PPV HLS Stream Resolver
 
 > 🎬 Node.js resolver for **ppv.s\*\*** live streams with a browser-based event explorer and HLS proxy.
@@ -7,6 +8,10 @@
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](#-docker)
 
 Fetches stream metadata from the public API, replays the `pooembed /fetch` protobuf handshake, runs the embed WASM decryptor, and proxies HLS playback — all behind a clean, responsive browser UI.
+
+<p><img src="docs/screenshot.png" alt="App screenshot" width="800" /></p>
+
+</div>
 
 **Based on:** [sharoon7171/ppv-hls-stream-resolver](https://github.com/sharoon7171/ppv-hls-stream-resolver)
 

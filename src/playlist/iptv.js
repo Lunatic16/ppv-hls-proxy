@@ -3,6 +3,12 @@ import { embedFromSource } from '../embed/context.js'
 import { resolveEmbedStreamUrl } from '../embed/decrypt.js'
 
 /**
+ * Events with a start time but no end time are treated as live for this long
+ * after kickoff, so stale entries don't sit in the playlist forever.
+ */
+const DEFAULT_LIVE_WINDOW_SECS = 4 * 3600
+
+/**
  * Fetch all streams from the upstream API with domain failover.
  */
 async function fetchAllStreams() {
@@ -77,19 +83,48 @@ function escAttr(s) {
 }
 
 /**
+ * Is this stream live right now?
+ * - 24/7 channels are always live.
+ * - Otherwise it must have started, and not yet ended (or, with no end time,
+ *   be within the default live window after kickoff).
+ */
+function isLiveNow(stream, now) {
+  if (stream.always_live) return true
+  const start = Number(stream.starts_at) || 0
+  const end = Number(stream.ends_at) || 0
+  if (!start || start > now) return false
+  if (end) return end >= now
+  return now - start <= DEFAULT_LIVE_WINDOW_SECS
+}
+
+/**
+ * A category name counts only if it's a real, non-empty label.
+ */
+function cleanCategory(cat) {
+  const name = String(cat.category || cat.category_name || '').trim()
+  if (!name || name === '(?)' || name.toLowerCase() === 'uncategorized') return ''
+  return name
+}
+
+/**
  * Generate an M3U8 playlist for IPTV players (TiviMate, IPTV Smarters, etc).
+ * Only categorised, currently-live events are included (substreams follow
+ * their parent event).
  *
  * @param {string} origin - This server's origin, e.g. http://192.168.1.10:3000
  * @param {string} [categoryFilter] - Optional category name to filter by
+ * @param {{liveOnly?: boolean}} [options] - liveOnly defaults to true
  * @returns {Promise<string>} M3U8 playlist text
  */
-export async function generatePlaylist(origin, categoryFilter) {
+export async function generatePlaylist(origin, categoryFilter, { liveOnly = true } = {}) {
   const categories = await fetchAllStreams()
+  const now = Math.floor(Date.now() / 1000)
 
   const lines = ['#EXTM3U']
 
   for (const cat of categories) {
-    const catName = cat.category || cat.category_name || 'Uncategorized'
+    const catName = cleanCategory(cat)
+    if (!catName) continue // skip uncategorised events entirely
 
     if (categoryFilter && catName.toLowerCase() !== categoryFilter.toLowerCase()) continue
 
@@ -97,6 +132,7 @@ export async function generatePlaylist(origin, categoryFilter) {
       const name = stream.name || 'Unknown'
       const uri = stream.uri_name || ''
       if (!uri || !stream.iframe) continue
+      if (liveOnly && !isLiveNow(stream, now)) continue
 
       const logo = stream.poster || ''
       const group = catName
