@@ -1,4 +1,4 @@
-</div>
+<div align="center">
 # PPV HLS Stream Resolver
 
 > 🎬 Node.js resolver for **ppv.s\*\*** live streams with a browser-based event explorer and HLS proxy.
