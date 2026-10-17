@@ -1,7 +1,8 @@
 <div align="center">
+  
 # PPV HLS Stream Resolver
 
-> 🎬 Node.js resolver for **ppv.s\*\*** live streams with a browser-based event explorer and HLS proxy.
+**🎬 Node.js resolver for **ppv.s\*\*** live streams with a browser-based event explorer and HLS proxy.**
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](#disclaimer)
