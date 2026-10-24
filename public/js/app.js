@@ -39,7 +39,7 @@ let statusFilter = 'live' // live | upcoming | all
 let playToken = 0
 
 // API domain failover for frontend
-const API_DOMAINS = ['ppv.st', 'ppv.cx', 'ppv.to', 'ppv.is', 'ppv.lc']
+const API_DOMAINS = ['ppv.tj', 'ppvs.pk', 'ppv.rw', 'ppv.ms', 'ppv.bi', 'ppv.ug']
 
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g
 const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
