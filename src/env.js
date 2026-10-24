@@ -2,13 +2,12 @@ export const port = Number(process.env.PORT) || 3000
 
 // API domain failover chain — tried in order until one responds
 export const API_DOMAINS = [
-  'ppv.st',   // primary
-  'ppv.tj',   // failover 1
-  'ppvs.pk',  // failover 2
-  'ppv.rw',   // failover 3
-  'ppv.ms',   // failover 4
-  'ppv.bi',   // failover 5
-  'ppv.ug',   // failover 6
+  'ppv.tj',   // failover
+  'ppvs.pk',  // failover 1
+  'ppv.rw',   // failover 2
+  'ppv.ms',   // failover 3
+  'ppv.bi',   // failover 4
+  'ppv.ug',   // failover 5
 ]
 
 export const API_BASE = `https://api.${API_DOMAINS[0]}/api`
